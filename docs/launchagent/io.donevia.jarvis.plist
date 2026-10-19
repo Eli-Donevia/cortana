@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Optional: start Donevia Jarvis when you log in to the Mac.
+  Not installed automatically. See README.md, "Start at login (optional)".
+
+  Before installing, replace __JARVIS_DIR__ (the donevia-jarvis folder) and
+  __HOME__ (your home folder, e.g. /Users/eli) below. The README has a
+  one-line command that does it for you.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>io.donevia.jarvis</string>
+
+  <!--
+    Runs the same launcher as a double-click: it finds Node (Homebrew, nvm,
+    Volta, nodejs.org), reinstalls packages after an update, checks setup,
+    then starts Jarvis. JARVIS_LAUNCH_AGENT=1 tells it there is no Terminal
+    window: it never waits for a key press or opens the sign-in.
+  -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__JARVIS_DIR__/Start Cortana.command</string>
+  </array>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>JARVIS_LAUNCH_AGENT</key>
+    <string>1</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- Do not restart in a loop if something is wrong; run npm run setup instead. -->
+  <key>KeepAlive</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/donevia-jarvis.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/donevia-jarvis.log</string>
+</dict>
+</plist>

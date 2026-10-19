@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a0b0d" />
+    <meta name="color-scheme" content="dark" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!--
+      Content Security Policy. Cards are text only (src/ui/sanitise.ts), so
+      images, media and frames are limited to this page's own files: nothing a
+      card says can make the browser fetch a remote URL.
+
+      Network is limited to what the voice stack needs:
+        the bridge            ws/http on 127.0.0.1:8787
+        Kokoro voice model    huggingface.co and its CDN (*.hf.co), once
+        ONNX runtime (WASM)   one jsDelivr folder: the exact
+                              @huggingface/transformers version installed
+                              (__ORT_CDN__ is filled in by vite.config.ts)
+        Porcupine (optional)  Picovoice validates its access key online
+      'wasm-unsafe-eval' and blob: workers are for ONNX and Porcupine.
+      No 'unsafe-inline' or 'unsafe-eval' scripts: `npm start` serves the
+      built face, which uses neither (nor does the espeak phonemiser, checked
+      in Chromium). Only `npm run dev` adds them, for Vite's React refresh
+      preamble.
+      Fonts are bundled (@fontsource), so no font host is allowed.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="
+        default-src 'self';
+        base-uri 'self';
+        object-src 'none';
+        frame-src 'none';
+        form-action 'none';
+        img-src 'self' data: blob:;
+        media-src 'self' data: blob:;
+        font-src 'self' data:;
+        style-src 'self' 'unsafe-inline';
+        script-src 'self' 'wasm-unsafe-eval' blob: __ORT_CDN__;
+        worker-src 'self' blob:;
+        connect-src 'self' data: blob:
+          ws://127.0.0.1:8787 http://127.0.0.1:8787
+          https://huggingface.co https://*.huggingface.co https://*.hf.co
+          __ORT_CDN__
+          https://*.picovoice.ai https://*.picovoice.net;
+      "
+    />
+
+    <title>Cortana</title>
+    <!--
+      Dark from the first paint, before the bundle's CSS arrives, and a line
+      of text that React replaces when it renders. If the scripts never run
+      (a stale window, a blocked or missing file), the window says so instead
+      of staying blank.
+    -->
+    <style>
+      html, body { margin: 0; height: 100%; background: #0a0b0d; color: #a3a7b3; }
+      .preboot { display: grid; place-items: center; height: 100%; font: 13px/1.6 -apple-system, system-ui, sans-serif; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <div id="root"><div class="preboot"><p>Starting Cortana…<br />If this stays, close this window and double-click "Start Cortana.command" again.</p></div></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

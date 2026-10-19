@@ -186,6 +186,7 @@ function publicConfig() {
       // to the page because Porcupine runs in the browser; it never leaves
       // localhost except to Picovoice's licence check.
       porcupineKey: config.picovoiceKey || null,
+      barge: config.barge,
     },
   }
 }

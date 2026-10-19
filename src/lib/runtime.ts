@@ -22,6 +22,8 @@ export type Runtime = {
     /** auto: on-device recognition if Chrome has it, else push-to-talk. */
     mode: 'auto' | 'on-device' | 'cloud' | 'off'
     porcupineKey: string | null
+    /** What interrupts her mid-sentence (JARVIS_BARGE). */
+    barge: 'name' | 'words' | 'any'
   }
 }
 
@@ -29,7 +31,7 @@ const DEFAULTS: Runtime = {
   version: '',
   hqUrl: '',
   tts: { engine: 'kokoro', voice: 'bf_emma', device: 'auto' },
-  wake: { mode: 'auto', porcupineKey: null },
+  wake: { mode: 'auto', porcupineKey: null, barge: 'words' },
 }
 
 let current: Runtime = DEFAULTS

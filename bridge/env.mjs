@@ -118,6 +118,9 @@ export const config = {
   kokoroVoice: oneOf('JARVIS_KOKORO_VOICE', KOKORO_VOICES, 'bf_emma'),
   kokoroDevice: oneOf('JARVIS_KOKORO_DEVICE', ['auto', 'webgpu', 'wasm'], 'auto'),
   wake: oneOf('JARVIS_WAKE', ['auto', 'on-device', 'cloud', 'off'], 'auto'),
+  // What cuts her off mid-sentence: her name only, her name or a stop word
+  // ("stop", "wait", "hold on"), or any speech (best with headphones).
+  barge: oneOf('JARVIS_BARGE', ['name', 'words', 'any'], 'words'),
   picovoiceKey: setting('PICOVOICE_ACCESS_KEY', ''),
   allowNoOrigin: setting('JARVIS_ALLOW_NO_ORIGIN', '0') === '1',
   extraOrigins: setting('JARVIS_ALLOWED_ORIGINS', '')

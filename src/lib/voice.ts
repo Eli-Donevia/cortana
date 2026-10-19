@@ -411,7 +411,12 @@ export type WakeOptions = {
   mode: 'auto' | 'on-device' | 'cloud' | 'off'
   /** PICOVOICE_ACCESS_KEY from the settings, if Eli has one. */
   porcupineKey: string | null
+  /** JARVIS_BARGE: what interrupts her mid-sentence. */
+  barge?: 'name' | 'words' | 'any'
 }
+
+/** Short words that stop her, for barge mode "words". Narrow on purpose: "no" is in too many of her own sentences. */
+const STOP_WORDS = /\b(?:stop|wait|hold on|hang on|cancel|never ?mind|shush|quiet|enough)\b/i
 
 const LANG = 'en-US'
 
@@ -538,7 +543,8 @@ export async function startVoice(h: VoiceHandlers, wake: WakeOptions): Promise<V
     (status === 'downloadable' || status === 'downloading')
   diag.wake = porcupine ? 'porcupine' : alwaysOn ? (local ? 'on-device' : 'cloud') : pending ? 'pack-downloading' : 'push-to-talk'
 
-  let browser = startBrowserVoice(h, { alwaysOn, local })
+  const barge = wake.barge ?? 'words'
+  let browser = startBrowserVoice(h, { alwaysOn, local, barge })
   let stopped = false
   let packWatch: ReturnType<typeof setInterval> | null = null
   if (pending) {
@@ -560,7 +566,7 @@ export async function startVoice(h: VoiceHandlers, wake: WakeOptions): Promise<V
         if (now !== 'available' || stopped || h.mode() !== 'wake') return
         if (packWatch) clearInterval(packWatch)
         browser.stop()
-        browser = startBrowserVoice(h, { alwaysOn: true, local: true })
+        browser = startBrowserVoice(h, { alwaysOn: true, local: true, barge })
         diag.engine = 'on-device'
         diag.alwaysOn = true
         diag.wake = 'on-device'
@@ -605,7 +611,7 @@ export const wakeWordLive = () => diag.wake !== 'push-to-talk' && diag.wake !== 
  */
 function startBrowserVoice(
   h: VoiceHandlers,
-  opts: { alwaysOn: boolean; local: boolean },
+  opts: { alwaysOn: boolean; local: boolean; barge: 'name' | 'words' | 'any' },
 ): Voice & { kick: () => void } {
   const Ctor = recognitionCtor()
   if (!Ctor) {
@@ -753,7 +759,14 @@ function startBrowserVoice(
         // often her own voice coming back, and she kept cutting herself off.
         // What she hears in the meantime is dropped, so it never lands in
         // the next question either.
-        if (!WAKE.test(full)) {
+        // Her name always cuts in. In "words" mode so does a stop word she did
+        // not just say herself; in "any" mode, three words that are not her echo.
+        const spoken = speakingNow()
+        const cuts =
+          WAKE.test(full) ||
+          (opts.barge !== 'name' && STOP_WORDS.test(full) && !STOP_WORDS.test(spoken)) ||
+          (opts.barge === 'any' && words >= 3 && !isEcho(full, spoken))
+        if (!cuts) {
           diag.selfGuarded++
           settled = ''
           interim = ''

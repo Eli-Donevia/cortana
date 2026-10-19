@@ -539,6 +539,10 @@ export function decideTool(name, input, opts = {}) {
     }
     if ((CONFIRM_WRITES[service] ?? []).includes(mcp.tool)) {
       if (opts.fromAgent) return deny('Only Cortana herself takes actions, after Eli confirms; the researcher only reads.')
+      // Standing permissions (bridge/standing.mjs): the two calendar basics Eli
+      // allowed without a spoken yes, checked against the event as read.
+      const st = opts.standing?.(name, input)
+      if (st?.ok) return { allow: true, reason: `standing: ${st.summary}`, standing: st }
       if (!opts.confirm) return deny(`${mcp.tool} needs Eli to confirm out loud, and that is not available here.`)
       return opts.confirm.check(name, input, opts.stage)
     }

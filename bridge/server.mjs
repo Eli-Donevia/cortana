@@ -44,6 +44,7 @@ import {
 import { filesServer } from './files.mjs'
 import { agentCommand, agentGate, createAgentManager, describeTask } from './agents.mjs'
 import { createProactive, quietCommand } from './proactive.mjs'
+import { createEventMemory, createStanding, standingCheck, standingCommand } from './standing.mjs'
 import { createRunner } from './agentRunner.mjs'
 import { readLocalServers, inspect, sessionOptions, probeDataPath } from './probe.mjs'
 import { config, childEnv, settingsProblems, settingsFiles } from './env.mjs'
@@ -183,6 +184,10 @@ async function quickCheck(prompt, ws) {
     clearTimeout(t)
   }
 }
+
+/** Standing permissions: on/off and the log, shared by every window. */
+const standing = createStanding()
+console.log(`[jarvis] standing permissions: ${standing.enabled ? 'on' : 'off'} (calendar basics)`)
 
 const proactive = createProactive({
   activeWorkspace: () => WS.workspaces.find((w) => w.id === WS.active),
@@ -437,7 +442,15 @@ wss.on('connection', (socket) => {
   const issued = new Map()
   // Actions wait for Eli's spoken yes; this holds them (bridge/confirm.mjs).
   const confirm = createConfirmations()
-  const opts = { hqUrl: HQ_URL, issued, confirm }
+  // Calendar events as read, for the standing checks (organizer, start, description).
+  const events = createEventMemory()
+  const standingFor = (name, input) => {
+    const st = standingCheck(name, input, { enabled: standing.enabled, ws: opts.workspace, events })
+    return st.ok && standing.allows(st.action) ? st : { ok: false }
+  }
+  /** Standing calls approved by the hook, by tool-use id, reported once they have run. */
+  const standingRuns = new Map()
+  const opts = { hqUrl: HQ_URL, issued, confirm, standing: standingFor }
   /** Remember HQ docs as they are read, so a write can be checked against them. */
   const postToolUse = async (input) => {
     const name = input?.tool_name
@@ -446,11 +459,25 @@ wss.on('connection', (socket) => {
     if (op === 'get' && artifactId(ti.url) === artifactId(opts.hqUrl)) {
       confirm.noteRead(ti.collection, ti.doc_id, JSON.stringify(input?.tool_response ?? ''))
     }
+    if (/calendar/i.test(String(name)) && /__(?:get_event|list_events|search_events)$/.test(String(name))) {
+      events.note(input?.tool_response)
+    }
+    const st = standingRuns.get(input?.tool_use_id)
+    if (st) {
+      standingRuns.delete(input?.tool_use_id)
+      standing.record({ action: st.action, summary: st.summary, workspace: opts.workspace?.id })
+      console.log(`[jarvis] did on its own: ${st.summary}`)
+      send({ type: 'agent-event', kind: 'standing', id: '', line: `${st.summary}.`, speak: true })
+    }
     return { continue: true }
   }
   const gate = makePreToolUseHook(opts, (name, verdict) => logDecision(name, verdict, 'hook'))
   const preToolUse = async (input, toolUseId, ctx) => {
     const out = await gate(input, toolUseId, ctx)
+    if (out?.continue) {
+      const st = standingFor(input?.tool_name, input?.tool_input)
+      if (st.ok) standingRuns.set(toolUseId ?? input?.tool_use_id, st)
+    }
     const name = input?.tool_name
     if (out?.continue && name && !isFaceTool(name) && !announced.has(toolUseId)) {
       announced.add(toolUseId)
@@ -728,6 +755,19 @@ wss.on('connection', (socket) => {
       const text = checked.text
       if (handleWorkspaceAsk(text, id)) return
       if (handleAgentAsk(text, id)) return
+      const sc = standingCommand(text)
+      if (sc === 'off') {
+        standing.setEnabled(false)
+        return reply(id, "Okay. From now on I'll ask before doing anything.")
+      }
+      if (sc === 'on') {
+        standing.setEnabled(true)
+        return reply(id, "Okay. I'll accept teammates' invites and add prep notes on my own again, and tell you each time.")
+      }
+      if (sc === 'log') {
+        const r = standing.recent(5)
+        return reply(id, r.length ? `On my own, most recent first: ${r.map((e) => e.summary).join('. ')}.` : "I haven't done anything on my own yet.")
+      }
       const q = quietCommand(text)
       if (q === 'snooze') {
         proactive.snooze()

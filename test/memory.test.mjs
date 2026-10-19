@@ -50,3 +50,11 @@ test('only Cortana uses memory: never the researcher, never an agent', () => {
   const g = agentGate({ proposals: [] }, { id: 'd', name: 'D', services: [], hqUrl: null, filesDir: '/tmp' }, { hqUrl: '' })
   assert.equal(g('mcp__jarvis_memory__memory_search', { query: 'x' }).allow, false)
 })
+
+test('screen context is Cortana-only and read-only', () => {
+  assert.equal(decideTool('mcp__jarvis_context__screen_context', {}, {}).allow, true)
+  assert.equal(decideTool('mcp__jarvis_context__screen_context', {}, { fromAgent: true }).allow, false)
+  assert.equal(decideTool('mcp__jarvis_context__screenshot', {}, {}).allow, false)
+  const g = agentGate({ proposals: [] }, { id: 'd', name: 'D', services: [], hqUrl: null, filesDir: '/tmp' }, { hqUrl: '' })
+  assert.equal(g('mcp__jarvis_context__screen_context', {}).allow, false)
+})

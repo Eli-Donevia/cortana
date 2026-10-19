@@ -525,6 +525,11 @@ export function decideTool(name, input, opts = {}) {
       if (!opts.confirm) return deny(`${mcp.tool} needs Eli to confirm out loud, and that is not available here.`)
       return opts.confirm.check(name, input, opts.stage)
     }
+    // What Eli is looking at (bridge/context.mjs): read-only, Cortana only.
+    if (mcp.server === 'jarvis_context') {
+      if (opts.fromAgent) return deny('Only Cortana looks at the screen.')
+      return mcp.tool === 'screen_context' ? allow('screen context') : deny(`${mcp.tool} is not a screen tool.`)
+    }
     // Memory (bridge/memory.mjs): Cortana's own notes. Never the researcher or an agent.
     if (mcp.server === 'jarvis_memory') {
       if (opts.fromAgent) return deny('Only Cortana keeps notes.')

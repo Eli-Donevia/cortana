@@ -46,6 +46,7 @@ import { agentCommand, agentGate, createAgentManager, describeTask } from './age
 import { createProactive, quietCommand } from './proactive.mjs'
 import { createEventMemory, createStanding, standingCheck, standingCommand } from './standing.mjs'
 import { createMemory, memoryBlock, memoryServer } from './memory.mjs'
+import { contextServer } from './context.mjs'
 import { createRunner } from './agentRunner.mjs'
 import { readLocalServers, inspect, sessionOptions, probeDataPath } from './probe.mjs'
 import { config, childEnv, settingsProblems, settingsFiles } from './env.mjs'
@@ -524,6 +525,7 @@ wss.on('connection', (socket) => {
           jarvis_ui: uiServer((op, args) => send({ type: 'ui', op, args })),
           jarvis_files: filesServer(ws.filesDir),
           jarvis_memory: memoryServer(mem, ws),
+          jarvis_context: contextServer(),
         },
         systemPrompt: `${buildSystemPrompt({
           path: dataPath,

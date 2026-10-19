@@ -98,7 +98,7 @@ export function agentGate(task, ws, { hqUrl, onPropose }) {
   const gate = (name, input, stage = 'hook') => {
     // Agents never send agents, and never use the face's display tools.
     if (name === 'Agent' || name === 'Task') return { allow: false, reason: 'Agents cannot send agents.' }
-    if (/^mcp__jarvis(_ui)?__/.test(String(name))) return { allow: false, reason: 'Agents have no screen; put it in the report.' }
+    if (/^mcp__jarvis(_ui|_memory|_context)?__/.test(String(name))) return { allow: false, reason: 'Agents have no screen and no memory; put it in the report.' }
     raw = input
     try {
       return decideTool(name, input, { ...opts, stage })

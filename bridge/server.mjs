@@ -45,6 +45,7 @@ import { filesServer } from './files.mjs'
 import { agentCommand, agentGate, createAgentManager, describeTask } from './agents.mjs'
 import { createProactive, quietCommand } from './proactive.mjs'
 import { createEventMemory, createStanding, standingCheck, standingCommand } from './standing.mjs'
+import { createMemory, memoryBlock, memoryServer } from './memory.mjs'
 import { createRunner } from './agentRunner.mjs'
 import { readLocalServers, inspect, sessionOptions, probeDataPath } from './probe.mjs'
 import { config, childEnv, settingsProblems, settingsFiles } from './env.mjs'
@@ -507,6 +508,7 @@ wss.on('connection', (socket) => {
   function startSession() {
     const mine = ++gen
     const ws = activeWs()
+    const mem = createMemory(ws)
     const s = query({
       prompt: userMessages(mine),
       options: {
@@ -521,13 +523,16 @@ wss.on('connection', (socket) => {
           }),
           jarvis_ui: uiServer((op, args) => send({ type: 'ui', op, args })),
           jarvis_files: filesServer(ws.filesDir),
+          jarvis_memory: memoryServer(mem, ws),
         },
-        systemPrompt: buildSystemPrompt({
+        systemPrompt: `${buildSystemPrompt({
           path: dataPath,
           hqUrl: ws.hqUrl,
           workspace: ws,
           others: WS.workspaces.filter((w) => w.id !== ws.id).map((w) => w.name),
-        }),
+        })}
+
+${memoryBlock(mem, ws)}`,
         includePartialMessages: true,
         hooks: { PreToolUse: [{ hooks: [preToolUse] }], PostToolUse: [{ hooks: [postToolUse] }] },
         // The second gate. The hook already denied anything outside the policy;

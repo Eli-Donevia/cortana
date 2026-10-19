@@ -525,6 +525,12 @@ export function decideTool(name, input, opts = {}) {
       if (!opts.confirm) return deny(`${mcp.tool} needs Eli to confirm out loud, and that is not available here.`)
       return opts.confirm.check(name, input, opts.stage)
     }
+    // Memory (bridge/memory.mjs): Cortana's own notes. Never the researcher or an agent.
+    if (mcp.server === 'jarvis_memory') {
+      if (opts.fromAgent) return deny('Only Cortana keeps notes.')
+      if (['memory_save', 'memory_search', 'memory_forget'].includes(mcp.tool)) return allow('memory')
+      return deny(`${mcp.tool} is not a memory tool.`)
+    }
     if (mcp.server === 'jarvis' || mcp.server === 'jarvis_ui') {
       return deny(`${mcp.tool} is not one of Jarvis's display tools.`)
     }

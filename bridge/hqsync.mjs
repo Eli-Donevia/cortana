@@ -69,3 +69,99 @@ export const briefFor = (task) => [task.title, task.detail].filter(Boolean).join
 export function taskStatus(agentStatus) {
   return { queued: 'working', working: 'working', 'needs-approval': 'needs-approval', done: 'done', failed: 'failed', cancelled: 'failed' }[agentStatus] ?? 'working'
 }
+
+// ---------------------------------------------------------------------------
+// The writer: queued, coalesced, throttled; each flush is one short session
+// whose gate admits exactly the queued writes (same path, same data) and
+// nothing else. Eli said yes to the sync on Oct 19.
+// ---------------------------------------------------------------------------
+
+import { actionKey } from './confirm.mjs'
+import { artifactId } from './policy.mjs'
+
+const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+/** The exact HQ tool input for one write, for whichever HQ tool this Claude Code has. */
+export function writeCall(hqTool, hqUrl, { collection, doc_id, op, data }) {
+  return hqTool === 'Artifact'
+    ? { tool: 'Artifact', input: { action: 'write_db', db_op: op, url: hqUrl, collection, doc_id, data } }
+    : { tool: 'ArtifactData', input: { action: op, url: hqUrl, collection, doc_id, data } }
+}
+
+/** A gate that allows exactly these writes (and ToolSearch), once each. */
+export function writesGate(writes, hqUrl) {
+  const want = new Map(writes.map((w) => [actionKey('w', { c: w.collection, d: w.doc_id, op: w.op, data: w.data }), w]))
+  const done = new Set()
+  const gate = (name, input) => {
+    if (name === 'ToolSearch') return { allow: true, reason: 'tool search' }
+    if (name !== 'Artifact' && name !== 'ArtifactData') return { allow: false, reason: 'Only the listed HQ writes.' }
+    const i = input ?? {}
+    const op = name === 'Artifact' ? (i.action === 'write_db' ? i.db_op : null) : i.action
+    if (!['set', 'update'].includes(op) || artifactId(i.url) !== artifactId(hqUrl) || !plain(i.data)) {
+      return { allow: false, reason: 'Only the listed HQ writes.' }
+    }
+    const key = actionKey('w', { c: i.collection, d: i.doc_id, op, data: i.data })
+    if (!want.has(key) || done.has(key)) return { allow: false, reason: 'Only the listed HQ writes, once each.' }
+    done.add(key)
+    return { allow: true, reason: 'hq sync' }
+  }
+  gate.noteRead = () => {}
+  gate.done = () => done.size
+  return gate
+}
+
+/**
+ * @param {object} p
+ * @param {(writes) => Promise<number>} p.flushWrites   runs one session for these writes; resolves to how many ran
+ * @param {() => number} [p.now]
+ */
+export function createHqSync({ flushWrites, now = () => Date.now(), minGapMs = 60_000 }) {
+  const pending = new Map() // "collection/doc" -> write (latest wins)
+  const picked = new Set() // HQ task ids Cortana took, the only tasks/* she may update
+  let lastFlush = 0
+  let timer = null
+  let flushing = false
+
+  function allowed(w) {
+    if (w.collection === 'tasks') return picked.has(w.doc_id) && w.op === 'update'
+    return mirrorAllowed(w.collection, w.doc_id)
+  }
+
+  async function flush() {
+    timer = null
+    if (flushing || !pending.size) return
+    flushing = true
+    const writes = [...pending.values()]
+    pending.clear()
+    lastFlush = now()
+    try {
+      await flushWrites(writes)
+    } catch (err) {
+      console.warn(`[jarvis] HQ sync failed: ${err?.message ?? err}`)
+    } finally {
+      flushing = false
+      if (pending.size) schedule()
+    }
+  }
+
+  function schedule() {
+    if (timer) return
+    const wait = Math.max(0, lastFlush + minGapMs - now())
+    timer = setTimeout(flush, wait)
+    timer.unref?.()
+  }
+
+  return {
+    /** Queue one write; refused if it is not on the allow-list. */
+    queue(w) {
+      if (!allowed(w)) return false
+      pending.set(`${w.collection}/${w.doc_id}`, w)
+      schedule()
+      return true
+    },
+    pick: (taskId) => picked.add(taskId),
+    isPicked: (taskId) => picked.has(taskId),
+    pendingCount: () => pending.size,
+    flush,
+  }
+}

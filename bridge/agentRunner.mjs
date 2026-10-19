@@ -74,14 +74,14 @@ export function createRunner({ localServers, baseOptions }) {
     }
   }
 
-  async function runAgent(task, { gate, note, signal, ws }) {
+  async function runAgent(task, { gate, note, signal, ws, model, effort, maxTurns, systemPrompt }) {
     const q = query({
       prompt: `Task from Eli: ${task.brief}`,
       options: options(ws, {
-        model: config.deepModel,
-        effort: config.deepEffort,
-        maxTurns: AGENT_MAX_TURNS,
-        systemPrompt: agentPrompt(ws),
+        model: model ?? config.deepModel,
+        effort: effort ?? config.deepEffort,
+        maxTurns: maxTurns ?? AGENT_MAX_TURNS,
+        systemPrompt: systemPrompt ?? agentPrompt(ws),
         hooks: {
           PreToolUse: [{ hooks: [hookFor(gate, (n) => n !== 'ToolSearch' && note(`Using ${label(n)}`))] }],
           PostToolUse: [

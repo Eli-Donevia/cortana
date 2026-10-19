@@ -121,6 +121,10 @@ export const config = {
   // What cuts her off mid-sentence: her name only, her name or a stop word
   // ("stop", "wait", "hold on"), or any speech (best with headphones).
   barge: oneOf('JARVIS_BARGE', ['name', 'words', 'any'], 'words'),
+  // Speaking first: meeting nudges and alerts (bridge/proactive.mjs). Eli said yes, Oct 19.
+  proactive: setting('JARVIS_PROACTIVE', '1') !== '0',
+  quietHours: setting('JARVIS_QUIET_HOURS', '22:30-07:00'),
+  alertMinutes: Math.max(5, Number(setting('JARVIS_ALERT_MINUTES', '20')) || 20),
   picovoiceKey: setting('PICOVOICE_ACCESS_KEY', ''),
   allowNoOrigin: setting('JARVIS_ALLOW_NO_ORIGIN', '0') === '1',
   extraOrigins: setting('JARVIS_ALLOWED_ORIGINS', '')

@@ -145,8 +145,9 @@ export function watchAgents(fn: (list: AgentTask[]) => void): () => void {
   }
 }
 /** A one-line heads-up from the bridge: an agent finished, needs approval, or stopped. */
-let onAgentEvent: ((e: { kind: string; id: string; line: string }) => void) | null = null
-export function watchAgentEvents(fn: (e: { kind: string; id: string; line: string }) => void) {
+type Notice = { kind: string; id: string; line: string; speak: boolean }
+let onAgentEvent: ((e: Notice) => void) | null = null
+export function watchAgentEvents(fn: (e: Notice) => void) {
   onAgentEvent = fn
 }
 export function decideAgentAction(id: string, pid: string, approve: boolean): void {
@@ -229,8 +230,8 @@ function dispatch(ws: WebSocket) {
       agentList = Array.isArray(m.list) ? m.list : []
       onAgents?.(agentList)
     } else if (msg.type === 'agent-event') {
-      const m = msg as unknown as { kind?: string; id?: string; line?: string }
-      if (m.line) onAgentEvent?.({ kind: String(m.kind ?? ''), id: String(m.id ?? ''), line: String(m.line) })
+      const m = msg as unknown as { kind?: string; id?: string; line?: string; speak?: boolean }
+      if (m.line) onAgentEvent?.({ kind: String(m.kind ?? ''), id: String(m.id ?? ''), line: String(m.line), speak: m.speak !== false })
     } else if (msg.type === 'workspaces') {
       const m = msg as unknown as { active?: string; list?: Workspace[] }
       workspaces = { active: String(m.active ?? ''), list: Array.isArray(m.list) ? m.list : [] }

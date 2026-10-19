@@ -366,9 +366,16 @@ export default function App() {
     watchDataPath((p) => store.getState().setDataPath(p))
     watchBlades((blade) => store.getState().pushBlade(blade))
     watchAgentEvents((e) => {
-      store.getState().fireEffect('pulse')
-      headsUp.current.push(e.line)
-      sayHeadsUp()
+      const s = store.getState()
+      s.fireEffect('pulse')
+      if (e.speak) {
+        headsUp.current.push(e.line)
+        sayHeadsUp()
+      } else {
+        // Quiet hours or "not now": shown, not spoken.
+        const esc = (x: string) => x.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c] as string)
+        s.pushBlade({ id: `notice-${Date.now()}`, title: 'HEADS-UP', kind: 'markup', html: `<p>${esc(e.line)}</p>`, accent: 'default', size: 'compact', hold: 'sticky' } as never)
+      }
     })
     watchUi((op, args) => {
       const s = store.getState()
@@ -432,6 +439,21 @@ export default function App() {
     store.getState().setWake(shownWake(voiceDiag.wake))
 
     store.getState().setPhase('dormant')
+
+    // The morning brief: the first time she is opened each day (Chicago time).
+    try {
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+      if (localStorage.getItem('cortana.briefDay') !== today) {
+        localStorage.setItem('cortana.briefDay', today)
+        setTimeout(() => {
+          if (store.getState().phase === 'dormant') {
+            void respond("Good morning brief: what's on today, what needs me, and anything urgent. Under forty seconds.")
+          }
+        }, 2500)
+      }
+    } catch {
+      /* no storage: no brief, nothing else changes */
+    }
 
     // Kokoro started loading when the page opened (see the effect below); this
     // only covers a settings file that the first /config read missed.

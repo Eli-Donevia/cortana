@@ -125,6 +125,8 @@ export const config = {
   proactive: setting('JARVIS_PROACTIVE', '1') !== '0',
   quietHours: setting('JARVIS_QUIET_HOURS', '22:30-07:00'),
   alertMinutes: Math.max(5, Number(setting('JARVIS_ALERT_MINUTES', '20')) || 20),
+  // Mirror her status, agents and alerts into HQ, and run HQ tasks for CORTANA (bridge/hqsync.mjs). Eli: yes, Oct 19.
+  hqSync: setting('JARVIS_HQ_SYNC', '1') !== '0',
   picovoiceKey: setting('PICOVOICE_ACCESS_KEY', ''),
   allowNoOrigin: setting('JARVIS_ALLOW_NO_ORIGIN', '0') === '1',
   extraOrigins: setting('JARVIS_ALLOWED_ORIGINS', '')

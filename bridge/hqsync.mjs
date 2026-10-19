@@ -1,3 +1,6 @@
+import { actionKey } from './confirm.mjs'
+import { artifactId } from './policy.mjs'
+
 /**
  * Cortana <-> HQ, prepared and OFF (JARVIS_HQ_SYNC, not wired yet: waits for
  * Eli's yes). Pure shapes only, so test/hqsync.test.mjs pins them:
@@ -76,8 +79,6 @@ export function taskStatus(agentStatus) {
 // nothing else. Eli said yes to the sync on Oct 19.
 // ---------------------------------------------------------------------------
 
-import { actionKey } from './confirm.mjs'
-import { artifactId } from './policy.mjs'
 
 const plain = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 

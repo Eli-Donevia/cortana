@@ -47,6 +47,8 @@ import { createProactive, quietCommand } from './proactive.mjs'
 import { createEventMemory, createStanding, standingCheck, standingCommand } from './standing.mjs'
 import { createMemory, memoryBlock, memoryServer } from './memory.mjs'
 import { contextServer } from './context.mjs'
+import { agentDoc, alertDoc, alertId, briefFor, createHqSync, pickable, statusDoc, taskStatus, writeCall, writesGate } from './hqsync.mjs'
+import { parseJsonArray } from './proactive.mjs'
 import { createRunner } from './agentRunner.mjs'
 import { readLocalServers, inspect, sessionOptions, probeDataPath } from './probe.mjs'
 import { config, childEnv, settingsProblems, settingsFiles } from './env.mjs'
@@ -147,6 +149,8 @@ const agents = createAgentManager({
   execute: runner.execute,
   onEvent: ({ type, task }) => {
     sendAgents()
+    syncAgent(task)
+    syncStatus()
     if (type === 'change') return
     const what = task.brief.length > 60 ? `${task.brief.slice(0, 59)}…` : task.brief
     const line =
@@ -191,12 +195,111 @@ async function quickCheck(prompt, ws) {
 const standing = createStanding()
 console.log(`[jarvis] standing permissions: ${standing.enabled ? 'on' : 'off'} (calendar basics)`)
 
+// ---------------------------------------------------------------------------
+// HQ sync (bridge/hqsync.mjs): her status, agents and alerts into HQ, and HQ
+// tasks for CORTANA run by her agents. Writes go through writesGate only.
+// ---------------------------------------------------------------------------
+
+const hqWorkspace = () => WS.workspaces.find((w) => w.hqUrl)
+let facePhase = 'dormant'
+let faceOnline = false
+/** HQ task id <-> agent id, for tasks Cortana picked up. */
+const taskOfAgent = new Map()
+
+async function flushWrites(writes) {
+  const ws = hqWorkspace()
+  if (!ws) return 0
+  const calls = writes.map((w) => writeCall(dataPath.hqTool ?? 'Artifact', ws.hqUrl, w))
+  const gate = writesGate(writes, ws.hqUrl)
+  const ctl = new AbortController()
+  const t = setTimeout(() => ctl.abort(new Error('HQ sync timed out')), 2 * 60_000)
+  t.unref?.()
+  try {
+    await runner.runAgent(
+      { brief: `Make exactly these HQ database calls, one each, changing nothing:\n${JSON.stringify(calls)}\nThen reply DONE.`, proposals: [] },
+      {
+        gate,
+        note: () => {},
+        signal: ctl.signal,
+        ws,
+        model: config.model,
+        effort: 'low',
+        maxTurns: writes.length + 4,
+        systemPrompt: "You copy Cortana's status into the HQ database: make exactly the calls listed, in order, with the inputs exactly as given, and nothing else.",
+      },
+    )
+  } finally {
+    clearTimeout(t)
+  }
+  if (gate.done() < writes.length) console.warn(`[jarvis] HQ sync: ${gate.done()} of ${writes.length} writes ran`)
+  return gate.done()
+}
+
+const hqsync = createHqSync({ flushWrites })
+const syncOn = () => config.hqSync && Boolean(hqWorkspace())
+
+function syncStatus() {
+  if (!syncOn()) return
+  const ws = WS.workspaces.find((w) => w.id === WS.active)
+  hqsync.queue({ collection: 'cortana', doc_id: 'status', op: 'set', data: statusDoc({ online: faceOnline, workspace: ws, phase: facePhase, agents: agents.list() }) })
+}
+
+function syncAgent(task) {
+  if (!syncOn()) return
+  const ws = WS.workspaces.find((w) => w.id === task.workspace)
+  hqsync.queue({ collection: 'cortana_agents', doc_id: task.id, op: 'set', data: agentDoc(task, ws) })
+  const hqTask = taskOfAgent.get(task.id)
+  if (hqTask) {
+    hqsync.queue({
+      collection: 'tasks',
+      doc_id: hqTask,
+      op: 'update',
+      data: { status: taskStatus(task.status), result: (task.report || task.error || '').slice(0, 1000), updated_at: new Date().toISOString() },
+    })
+  }
+}
+
+/** HQ tasks for CORTANA, picked up every ten minutes and run as agents in the HQ workspace. */
+async function pickUpTasks() {
+  const ws = hqWorkspace()
+  if (!syncOn() || !ws) return
+  try {
+    const list = parseJsonArray(
+      await quickCheck(
+        `Read the HQ database collection "tasks" (url ${ws.hqUrl}) and list the tasks whose agent is "CORTANA" and status is "queued". ` +
+          'Reply with ONLY a JSON array, no other text: [{"id": "doc id", "agent": "CORTANA", "status": "queued", "title": "...", "detail": "..."}]. Reply [] if none.',
+        ws,
+      ),
+    )
+    for (const t of list.filter(pickable)) {
+      if (!t.id || hqsync.isPicked(t.id)) continue
+      hqsync.pick(t.id)
+      const a = agents.dispatch(briefFor(t), ws.id)
+      taskOfAgent.set(a.id, t.id)
+      console.log(`[jarvis] picked up HQ task ${t.id} as agent ${a.id}`)
+      syncAgent(a)
+    }
+  } catch (err) {
+    console.warn(`[jarvis] HQ task pickup failed: ${err?.message ?? err}`)
+  }
+}
+let pickupTimer = null
+function startSync() {
+  if (!syncOn() || pickupTimer) return
+  void pickUpTasks()
+  pickupTimer = setInterval(pickUpTasks, 10 * 60_000)
+  pickupTimer.unref?.()
+}
+
 const proactive = createProactive({
   activeWorkspace: () => WS.workspaces.find((w) => w.id === WS.active),
   run: quickCheck,
   notify: ({ line, kind, speak }) => {
     console.log(`[jarvis] ${kind}${speak ? '' : ' (quiet)'}: ${line}`)
     faceSend({ type: 'agent-event', kind, id: '', line, speak })
+    if (kind === 'alert' && syncOn()) {
+      hqsync.queue({ collection: 'alerts', doc_id: alertId(line), op: 'set', data: alertDoc({ text: line, kind, workspace: WS.active }) })
+    }
   },
   quietHours: config.quietHours,
   alertMinutes: config.alertMinutes,
@@ -501,6 +604,9 @@ wss.on('connection', (socket) => {
   sendWorkspaces()
   sendAgents()
   proactive.start()
+  faceOnline = true
+  syncStatus()
+  startSync()
 
   let session = null
   let gen = 0
@@ -571,6 +677,8 @@ ${memoryBlock(mem, ws)}`,
               break
             }
             case 'result':
+            facePhase = 'dormant'
+            syncStatus()
               if (msg.subtype === 'success') {
                 sendTurn({ type: 'done', text: msg.result ?? '', costUsd: msg.total_cost_usd ?? null })
               } else {
@@ -634,6 +742,7 @@ ${memoryBlock(mem, ws)}`,
     sendWorkspaces()
     sendAgents()
     proactive.reset()
+    syncStatus()
     console.log(`[jarvis] workspace: ${activeWs().name}`)
   }
 
@@ -792,6 +901,7 @@ ${memoryBlock(mem, ws)}`,
       if (said.cancelled.length) console.log(`[jarvis] cancelled, no clear yes: ${said.cancelled.length} action(s)`)
       // Queued behind any interrupt still settling, so the tail of an
       // abandoned answer never lands on the new question.
+      facePhase = 'thinking'
       void settling.then(() => {
         answering = id
         if (deliver) {
@@ -830,6 +940,9 @@ ${memoryBlock(mem, ws)}`,
 
   socket.on('close', () => {
     console.log('[jarvis] face disconnected')
+    faceOnline = false
+    facePhase = 'dormant'
+    syncStatus()
     if (current === socket) current = null
     pathListeners.delete(sendPath)
     closed = true

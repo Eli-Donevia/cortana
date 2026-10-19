@@ -63,3 +63,35 @@ test('proactive helpers: JSON, quiet hours, nudges, alerts, snooze', () => {
   assert.equal(quietCommand('you can talk again'), 'unsnooze')
   assert.equal(quietCommand('not now, but tell me later about NOFFCU'), null)
 })
+
+import { createHqSync, writeCall, writesGate } from '../bridge/hqsync.mjs'
+const HQ = 'https://claude.ai/artifact/9kR9ivs2MuG5joRDSzWuo3'
+
+test('the writer gate allows exactly the queued writes, once each, and nothing else', () => {
+  const w = { collection: 'cortana', doc_id: 'status', op: 'set', data: { online: true } }
+  const g = writesGate([w], HQ)
+  const call = writeCall('Artifact', HQ, w)
+  assert.equal(g('Artifact', { ...call.input, data: { online: false } }).allow, false)
+  assert.equal(g('Artifact', { ...call.input, collection: 'pipeline' }).allow, false)
+  assert.equal(g('Artifact', { ...call.input, url: 'https://claude.ai/artifact/other' }).allow, false)
+  assert.equal(g('Artifact', { ...call.input, db_op: 'delete' }).allow, false)
+  assert.equal(g('mcp__claude_ai_Gmail__create_draft', {}).allow, false)
+  assert.equal(g('Artifact', call.input).allow, true)
+  assert.equal(g('Artifact', call.input).allow, false)
+  assert.equal(g.done(), 1)
+})
+
+test('the queue refuses paths off the allow-list and only updates tasks Cortana picked', async () => {
+  const flushed = []
+  const s = createHqSync({ flushWrites: async (ws) => flushed.push(...ws), minGapMs: 0 })
+  assert.equal(s.queue({ collection: 'pipeline', doc_id: 'p1', op: 'set', data: {} }), false)
+  assert.equal(s.queue({ collection: 'tasks', doc_id: 't1', op: 'update', data: { status: 'working' } }), false)
+  s.pick('t1')
+  assert.equal(s.queue({ collection: 'tasks', doc_id: 't1', op: 'set', data: {} }), false)
+  assert.equal(s.queue({ collection: 'tasks', doc_id: 't1', op: 'update', data: { status: 'working' } }), true)
+  assert.equal(s.queue({ collection: 'cortana', doc_id: 'status', op: 'set', data: { a: 1 } }), true)
+  assert.equal(s.queue({ collection: 'cortana', doc_id: 'status', op: 'set', data: { a: 2 } }), true) // latest wins
+  await s.flush()
+  assert.equal(flushed.length, 2)
+  assert.deepEqual(flushed.find((x) => x.collection === 'cortana').data, { a: 2 })
+})
